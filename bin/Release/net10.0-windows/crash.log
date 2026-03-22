@@ -1,0 +1,20 @@
+﻿[2026-03-22 18:13:36] StartAsync EXCEPTION
+System.IO.IOException: The process cannot access the file 'C:\Users\tonym\Desktop\conversion\VideoTranscoderUI\bin\Release\net10.0-windows\transcode_state.json' because it is being used by another process.
+   at Microsoft.Win32.SafeHandles.SafeFileHandle.CreateFile(String fullPath, FileMode mode, FileAccess access, FileShare share, FileOptions options)
+   at Microsoft.Win32.SafeHandles.SafeFileHandle.Open(String fullPath, FileMode mode, FileAccess access, FileShare share, FileOptions options, Int64 preallocationSize, Nullable`1 unixCreateMode)
+   at System.IO.File.OpenHandle(String path, FileMode mode, FileAccess access, FileShare share, FileOptions options, Int64 preallocationSize)
+   at System.IO.File.WriteToFile(String path, FileMode mode, ReadOnlySpan`1 contents, Encoding encoding)
+   at System.IO.File.WriteAllText(String path, String contents, Encoding encoding)
+   at TranscodeEngine.SaveState() in C:\Users\tonym\Desktop\conversion\VideoTranscoderUI\Program.cs:line 1094
+   at TranscodeEngine.ScanFiles() in C:\Users\tonym\Desktop\conversion\VideoTranscoderUI\Program.cs:line 733
+   at TranscodeEngine.RunAsync(Boolean resumeExisting, CancellationToken ct) in C:\Users\tonym\Desktop\conversion\VideoTranscoderUI\Program.cs:line 597
+   at MainForm.StartAsync(Boolean resumeExisting) in C:\Users\tonym\Desktop\conversion\VideoTranscoderUI\Program.cs:line 328
+
+[2026-03-22 18:54:28] StartAsync EXCEPTION
+System.IO.FileNotFoundException: Could not find file 'E:\ServeurMultimedia\wwwroot\videos\Series\Stranger Things\Stranger.Things.S01E01.FRENCH.WEBRIP.x264-AMB3R.[emule-island.ru].avi'.
+File name: 'E:\ServeurMultimedia\wwwroot\videos\Series\Stranger Things\Stranger.Things.S01E01.FRENCH.WEBRIP.x264-AMB3R.[emule-island.ru].avi'
+   at System.IO.FileInfo.get_Length()
+   at TranscodeEngine.ScanFiles() in C:\Users\tonym\Desktop\conversion\VideoTranscoderUI\Program.cs:line 699
+   at TranscodeEngine.RunAsync(Boolean resumeExisting, CancellationToken ct) in C:\Users\tonym\Desktop\conversion\VideoTranscoderUI\Program.cs:line 597
+   at MainForm.StartAsync(Boolean resumeExisting) in C:\Users\tonym\Desktop\conversion\VideoTranscoderUI\Program.cs:line 328
+

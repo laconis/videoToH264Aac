@@ -1,0 +1,13 @@
+﻿{
+  "SourceDir": "E:\\ServeurMultimedia\\wwwroot\\videos2",
+  "OutputDir": "E:\\ServeurMultimedia\\wwwroot\\converted",
+  "FfmpegPath": "C:\\Users\\tonym\\Desktop\\conversion\\VideoTranscoderUI\\bin\\Release\\net10.0-windows\\ffmpeg.exe",
+  "FfprobePath": "C:\\Users\\tonym\\Desktop\\conversion\\VideoTranscoderUI\\bin\\Release\\net10.0-windows\\ffprobe.exe",
+  "Mode": "auto",
+  "CpuWorkers": 1,
+  "GpuWorkers": 2,
+  "DeleteSourceAfterSuccess": true,
+  "SkipCompatible": true,
+  "MirrorTree": true,
+  "MinOutputBytes": 5242880
+}
