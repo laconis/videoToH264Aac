@@ -93,7 +93,7 @@ internal sealed class MainForm : Form
 
     private readonly Label lblStatus = new() { AutoSize = true, Text = "Prêt." };
     private readonly ProgressBar progressGlobal = new() { Width = 900, Height = 24 };
-    private bool uiClosing;
+
     private readonly ListView list = new();
     private readonly RichTextBox logBox = new()
     {
@@ -111,12 +111,14 @@ internal sealed class MainForm : Form
     private CancellationTokenSource? cts;
     private Task? runningTask;
     private bool closingRequested;
+    private bool uiClosing;
 
     private readonly string statePath = Path.Combine(AppContext.BaseDirectory, "transcode_state.json");
     private readonly string appLogPath = Path.Combine(AppContext.BaseDirectory, "transcode_ui.log");
     private readonly string defaultsPath = Path.Combine(AppContext.BaseDirectory, "defaults.json");
 
     private readonly object uiLock = new();
+    private readonly Dictionary<string, ListViewItem> listIndex = new(StringComparer.OrdinalIgnoreCase);
 
     public MainForm()
     {
@@ -221,13 +223,13 @@ internal sealed class MainForm : Form
 
         btnStart.Click += async (_, _) => await StartAsync(resumeExisting: false);
         btnResume.Click += async (_, _) => await StartAsync(resumeExisting: true);
-       btnStop.Click += (_, _) =>
-{
-    if (cts == null) return;
-    btnStop.Enabled = false;
-    lblStatus.Text = "Arrêt demandé...";
-    cts.Cancel();
-};
+        btnStop.Click += (_, _) =>
+        {
+            if (cts == null) return;
+            btnStop.Enabled = false;
+            lblStatus.Text = "Arrêt demandé...";
+            cts.Cancel();
+        };
 
         FormClosing += OnMainFormClosing;
 
@@ -235,19 +237,19 @@ internal sealed class MainForm : Form
         LoadStatePreview();
     }
 
-  private void OnMainFormClosing(object? sender, FormClosingEventArgs e)
-{
-    uiClosing = true;
-
-    if (runningTask != null && !runningTask.IsCompleted)
+    private void OnMainFormClosing(object? sender, FormClosingEventArgs e)
     {
-        e.Cancel = true;
-        closingRequested = true;
-        lblStatus.Text = "Fermeture en cours, arrêt demandé...";
-        btnStop.Enabled = false;
-        cts?.Cancel();
+        uiClosing = true;
+
+        if (runningTask != null && !runningTask.IsCompleted)
+        {
+            e.Cancel = true;
+            closingRequested = true;
+            lblStatus.Text = "Fermeture en cours, arrêt demandé...";
+            btnStop.Enabled = false;
+            cts?.Cancel();
+        }
     }
-}
 
     private void AddRow(TableLayoutPanel top, string label, Control control, Action browseAction)
     {
@@ -289,86 +291,90 @@ internal sealed class MainForm : Form
             target.Text = exeDialog.FileName;
     }
 
-private async Task StartAsync(bool resumeExisting)
-{
-    if (cts != null || (runningTask != null && !runningTask.IsCompleted))
-        return;
-
-    try
+    private async Task StartAsync(bool resumeExisting)
     {
-        uiClosing = false;
-
-        var options = ReadOptions();
-
-        if (!File.Exists(options.FfmpegPath))
-            throw new FileNotFoundException("ffmpeg.exe introuvable", options.FfmpegPath);
-
-        if (!Directory.Exists(options.SourceDir))
-            throw new DirectoryNotFoundException("Dossier source introuvable");
-
-        Directory.CreateDirectory(options.OutputDir);
-        Directory.CreateDirectory(Path.Combine(options.SourceDir, "failed"));
-
-        SaveDefaults(options);
-
-        btnStart.Enabled = false;
-        btnResume.Enabled = false;
-        btnStop.Enabled = true;
-
-        progressGlobal.Value = 0;
-        list.Items.Clear();
-        lblStatus.Text = "Initialisation...";
-
-        cts = new CancellationTokenSource();
-
-        Log($"Démarrage. resume={resumeExisting}");
-
-        var engine = new TranscodeEngine(options, statePath, appLogPath, ReportToUi, Log);
-runningTask = Task.Run(() => engine.RunAsync(resumeExisting, cts.Token), cts.Token);
-await runningTask;
-
-        await runningTask;
-
-        lblStatus.Text = "Terminé.";
-    }
-    catch (OperationCanceledException)
-    {
-        lblStatus.Text = "Arrêt demandé.";
-        Log("Arrêt demandé par l'utilisateur.");
-    }
-    catch (Exception ex)
-    {
-        lblStatus.Text = "Erreur.";
-        Log("ERREUR COMPLETE: " + ex);
+        if (cts != null || (runningTask != null && !runningTask.IsCompleted))
+            return;
 
         try
         {
-            File.AppendAllText(
-                Path.Combine(AppContext.BaseDirectory, "crash.log"),
-                $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] StartAsync EXCEPTION{Environment.NewLine}{ex}{Environment.NewLine}{Environment.NewLine}",
-                Encoding.UTF8);
+            uiClosing = false;
+
+            var options = ReadOptions();
+
+            if (!File.Exists(options.FfmpegPath))
+                throw new FileNotFoundException("ffmpeg.exe introuvable", options.FfmpegPath);
+
+            if (!Directory.Exists(options.SourceDir))
+                throw new DirectoryNotFoundException("Dossier source introuvable");
+
+            Directory.CreateDirectory(options.OutputDir);
+            Directory.CreateDirectory(Path.Combine(options.SourceDir, "failed"));
+
+            SaveDefaults(options);
+
+            btnStart.Enabled = false;
+            btnResume.Enabled = false;
+            btnStop.Enabled = true;
+
+            progressGlobal.Value = 0;
+
+            list.BeginUpdate();
+            list.Items.Clear();
+            list.EndUpdate();
+            listIndex.Clear();
+
+            lblStatus.Text = "Initialisation...";
+
+            cts = new CancellationTokenSource();
+
+            Log($"Démarrage. resume={resumeExisting}");
+
+            var engine = new TranscodeEngine(options, statePath, appLogPath, ReportToUi, Log);
+            runningTask = Task.Run(() => engine.RunAsync(resumeExisting, cts.Token), cts.Token);
+
+            await runningTask;
+
+            lblStatus.Text = "Terminé.";
         }
-        catch { }
-
-        MessageBox.Show(this, ex.ToString(), "Erreur", MessageBoxButtons.OK, MessageBoxIcon.Error);
-    }
-    finally
-    {
-        btnStart.Enabled = true;
-        btnResume.Enabled = true;
-        btnStop.Enabled = false;
-
-        cts?.Dispose();
-        cts = null;
-        runningTask = null;
-
-        if (closingRequested && !IsDisposed)
+        catch (OperationCanceledException)
         {
-            closingRequested = false;
-            BeginInvoke(new Action(Close));
+            lblStatus.Text = "Arrêt demandé.";
+            Log("Arrêt demandé par l'utilisateur.");
+        }
+        catch (Exception ex)
+        {
+            lblStatus.Text = "Erreur.";
+            Log("ERREUR COMPLETE: " + ex);
+
+            try
+            {
+                File.AppendAllText(
+                    Path.Combine(AppContext.BaseDirectory, "crash.log"),
+                    $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] StartAsync EXCEPTION{Environment.NewLine}{ex}{Environment.NewLine}{Environment.NewLine}",
+                    Encoding.UTF8);
+            }
+            catch { }
+
+            MessageBox.Show(this, ex.ToString(), "Erreur", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+        finally
+        {
+            btnStart.Enabled = true;
+            btnResume.Enabled = true;
+            btnStop.Enabled = false;
+
+            cts?.Dispose();
+            cts = null;
+            runningTask = null;
+
+            if (closingRequested && !IsDisposed)
+            {
+                closingRequested = false;
+                BeginInvoke(new Action(Close));
+            }
         }
     }
-}
 
     private AppOptions ReadOptions() => new()
     {
@@ -385,108 +391,117 @@ await runningTask;
         MinOutputBytes = (long)nudMinOutputMb.Value * 1024 * 1024
     };
 
-private void ReportToUi(UiReport r)
-{
-    if (uiClosing || IsDisposed)
-        return;
-
-    if (InvokeRequired)
+    private void ReportToUi(UiReport r)
     {
+        if (uiClosing || IsDisposed)
+            return;
+
+        if (InvokeRequired)
+        {
+            try
+            {
+                if (!IsHandleCreated) return;
+                BeginInvoke(new Action(() => ReportToUi(r)));
+            }
+            catch
+            {
+            }
+            return;
+        }
+
+        if (uiClosing || IsDisposed)
+            return;
+
         try
         {
-            if (!IsHandleCreated) return;
-            BeginInvoke(new Action(() => ReportToUi(r)));
-        }
-        catch
-        {
-        }
-        return;
-    }
+            lblStatus.Text = r.GlobalStatus;
+            progressGlobal.Value = Math.Max(0, Math.Min(100, r.GlobalPercent));
 
-    if (uiClosing || IsDisposed)
-        return;
+            list.BeginUpdate();
 
-    try
-    {
-        lblStatus.Text = r.GlobalStatus;
-        progressGlobal.Value = Math.Max(0, Math.Min(100, r.GlobalPercent));
-
-        foreach (var item in r.Files)
-        {
-            var state = item.Value;
-
-            var existing = list.Items.Cast<ListViewItem>()
-                .FirstOrDefault(x => string.Equals(x.Tag as string, item.Key, StringComparison.OrdinalIgnoreCase));
-
-            if (existing == null)
+            foreach (var kv in r.Files)
             {
-                existing = new ListViewItem(Path.GetFileName(item.Key)) { Tag = item.Key };
-                existing.SubItems.Add("");
-                existing.SubItems.Add("");
-                existing.SubItems.Add("");
-                existing.SubItems.Add("");
-                existing.SubItems.Add("");
-                existing.SubItems.Add("");
-                existing.SubItems.Add("");
-                list.Items.Add(existing);
+                string key = kv.Key;
+                var state = kv.Value;
+
+                if (!listIndex.TryGetValue(key, out var existing))
+                {
+                    existing = new ListViewItem(state.DisplayName) { Tag = key };
+                    existing.SubItems.Add(state.Engine);
+                    existing.SubItems.Add(state.Status);
+                    existing.SubItems.Add(state.PercentText);
+                    existing.SubItems.Add(state.EtaText);
+                    existing.SubItems.Add(state.InputSizeText);
+                    existing.SubItems.Add(state.OutputSizeText);
+                    existing.SubItems.Add(state.Details);
+
+                    list.Items.Add(existing);
+                    listIndex[key] = existing;
+                }
+                else
+                {
+                    existing.Text = state.DisplayName;
+                    existing.SubItems[1].Text = state.Engine;
+                    existing.SubItems[2].Text = state.Status;
+                    existing.SubItems[3].Text = state.PercentText;
+                    existing.SubItems[4].Text = state.EtaText;
+                    existing.SubItems[5].Text = state.InputSizeText;
+                    existing.SubItems[6].Text = state.OutputSizeText;
+                    existing.SubItems[7].Text = state.Details;
+                }
             }
 
-            existing.Text = state.DisplayName;
-            existing.SubItems[1].Text = state.Engine;
-            existing.SubItems[2].Text = state.Status;
-            existing.SubItems[3].Text = state.PercentText;
-            existing.SubItems[4].Text = state.EtaText;
-            existing.SubItems[5].Text = state.InputSizeText;
-            existing.SubItems[6].Text = state.OutputSizeText;
-            existing.SubItems[7].Text = state.Details;
+            list.EndUpdate();
+        }
+        catch (Exception ex)
+        {
+            try
+            {
+                File.AppendAllText(
+                    Path.Combine(AppContext.BaseDirectory, "crash.log"),
+                    $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] ReportToUi EXCEPTION{Environment.NewLine}{ex}{Environment.NewLine}{Environment.NewLine}",
+                    Encoding.UTF8);
+            }
+            catch { }
         }
     }
-    catch (Exception ex)
+
+    private void Log(string message)
     {
-        try
+        if (uiClosing || IsDisposed)
+            return;
+
+        if (InvokeRequired)
         {
-            File.AppendAllText(
-                Path.Combine(AppContext.BaseDirectory, "crash.log"),
-                $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] ReportToUi EXCEPTION{Environment.NewLine}{ex}{Environment.NewLine}{Environment.NewLine}",
-                Encoding.UTF8);
+            try
+            {
+                if (!IsHandleCreated) return;
+                BeginInvoke(new Action(() => Log(message)));
+            }
+            catch
+            {
+            }
+            return;
         }
-        catch { }
-    }
-}
 
-  private void Log(string message)
-{
-    if (uiClosing || IsDisposed)
-        return;
+        if (uiClosing || IsDisposed)
+            return;
 
-    if (InvokeRequired)
-    {
         try
         {
-            if (!IsHandleCreated) return;
-            BeginInvoke(new Action(() => Log(message)));
+            lock (uiLock)
+            {
+                if (logBox.TextLength > 200_000)
+                    logBox.Clear();
+
+                logBox.AppendText($"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}");
+                logBox.ScrollToCaret();
+            }
         }
         catch
         {
         }
-        return;
     }
-
-    if (uiClosing || IsDisposed)
-        return;
-
-    try
-    {
-        lock (uiLock)
-        {
-            logBox.AppendText($"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}");
-            logBox.ScrollToCaret();
-        }
-    }
-    catch
-    {
-    }
-}
 
     private void SaveDefaults(AppOptions options)
     {
@@ -594,6 +609,7 @@ internal sealed class TranscodeEngine
         if (!resumeExisting)
             state = new PersistedState();
 
+        WriteAppLog("Scan des fichiers...");
         var all = ScanFiles();
 
         totalCount = all.Count;
@@ -668,8 +684,6 @@ internal sealed class TranscodeEngine
 
     private List<JobItem> ScanFiles()
     {
-		log("ScanFiles: début");
-		
         var extensions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             ".mp4", ".mkv", ".avi", ".mov", ".wmv", ".flv", ".webm", ".m4v", ".ts", ".mpeg", ".mpg"
@@ -685,11 +699,14 @@ internal sealed class TranscodeEngine
             .ToList();
 
         var result = new List<JobItem>();
+        int scanned = 0;
 
         foreach (var path in sourceFiles)
         {
-			
-			log("Analyse: " + path);
+            scanned++;
+            if (scanned % 25 == 0)
+                WriteAppLog($"Scan: {scanned}/{sourceFiles.Count}");
+
             string relative = Path.GetRelativePath(options.SourceDir, path);
 
             var item = state.Items.FirstOrDefault(x => x.SourcePath.Equals(path, StringComparison.OrdinalIgnoreCase))
@@ -784,7 +801,7 @@ internal sealed class TranscodeEngine
                 s.Details = "Encodage";
             });
 
-            PushUi();
+            PushUi(force: true);
 
             bool usedGpu = gpu && nvencAvailable;
             bool ok = false;
@@ -904,85 +921,84 @@ internal sealed class TranscodeEngine
         }
     }
 
-   private async Task<bool> ConvertOneAsync(JobItem item, bool useGpu, CancellationToken ct)
-{
-    if (File.Exists(item.OutputPath))
+    private async Task<bool> ConvertOneAsync(JobItem item, bool useGpu, CancellationToken ct)
     {
-        try { File.Delete(item.OutputPath); } catch { }
+        if (File.Exists(item.OutputPath))
+        {
+            try { File.Delete(item.OutputPath); } catch { }
+        }
+
+        string videoArgs = useGpu
+            ? "-c:v h264_nvenc -preset p5 -cq 23 -b:v 0"
+            : "-c:v libx264 -preset medium -crf 23";
+
+        string audioArgs = "-c:a aac -b:a 192k";
+
+        string args =
+            $"-y -hide_banner -i \"{item.SourcePath}\" " +
+            $"{videoArgs} {audioArgs} -pix_fmt yuv420p -movflags +faststart " +
+            $"\"{item.OutputPath}\"";
+
+        var psi = new ProcessStartInfo
+        {
+            FileName = options.FfmpegPath,
+            Arguments = args,
+            UseShellExecute = false,
+            RedirectStandardError = true,
+            RedirectStandardOutput = true,
+            CreateNoWindow = true
+        };
+
+        using var process = new Process
+        {
+            StartInfo = psi,
+            EnableRaisingEvents = true
+        };
+
+        process.ErrorDataReceived += (_, e) =>
+        {
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(e.Data))
+                    ParseProgress(item, useGpu, e.Data);
+            }
+            catch
+            {
+            }
+        };
+
+        process.OutputDataReceived += (_, _) =>
+        {
+        };
+
+        if (!process.Start())
+            return false;
+
+        process.BeginErrorReadLine();
+        process.BeginOutputReadLine();
+
+        using var reg = ct.Register(() =>
+        {
+            try
+            {
+                if (!process.HasExited)
+                    process.Kill(entireProcessTree: true);
+            }
+            catch
+            {
+            }
+        });
+
+        await process.WaitForExitAsync();
+
+        if (ct.IsCancellationRequested)
+            throw new OperationCanceledException(ct);
+
+        if (process.ExitCode != 0)
+            return false;
+
+        return Tooling.ValidateOutput(options, item.SourcePath, item.OutputPath, log, quickOnly: false);
     }
-
-    string videoArgs = useGpu
-        ? "-c:v h264_nvenc -preset p5 -cq 23 -b:v 0"
-        : "-c:v libx264 -preset medium -crf 23";
-
-    string audioArgs = "-c:a aac -b:a 192k";
-
-    string args =
-        $"-y -hide_banner -i \"{item.SourcePath}\" " +
-        $"{videoArgs} {audioArgs} -pix_fmt yuv420p -movflags +faststart " +
-        $"\"{item.OutputPath}\"";
-
-    var psi = new ProcessStartInfo
-    {
-        FileName = options.FfmpegPath,
-        Arguments = args,
-        UseShellExecute = false,
-        RedirectStandardError = true,
-        RedirectStandardOutput = true,
-        CreateNoWindow = true
-    };
-
-    using var process = new Process
-    {
-        StartInfo = psi,
-        EnableRaisingEvents = true
-    };
-
-    process.ErrorDataReceived += (_, e) =>
-    {
-        try
-        {
-            if (!string.IsNullOrWhiteSpace(e.Data))
-                ParseProgress(item, useGpu, e.Data);
-        }
-        catch
-        {
-        }
-    };
-
-    process.OutputDataReceived += (_, e) =>
-    {
-        // volontairement ignoré
-    };
-
-    if (!process.Start())
-        return false;
-
-    process.BeginErrorReadLine();
-    process.BeginOutputReadLine();
-
-    using var reg = ct.Register(() =>
-    {
-        try
-        {
-            if (!process.HasExited)
-                process.Kill(entireProcessTree: true);
-        }
-        catch
-        {
-        }
-    });
-
-    await process.WaitForExitAsync();
-
-    if (ct.IsCancellationRequested)
-        throw new OperationCanceledException(ct);
-
-    if (process.ExitCode != 0)
-        return false;
-
-    return Tooling.ValidateOutput(options, item.SourcePath, item.OutputPath, log, quickOnly: false);
-}
 
     private void ParseProgress(JobItem item, bool useGpu, string line)
     {
@@ -999,6 +1015,8 @@ internal sealed class TranscodeEngine
 
         TimeSpan eta = Tooling.EstimateEta(current, item.DurationSeconds);
 
+        bool shouldPush = false;
+
         UpdateFileUi(item.SourcePath, s =>
         {
             s.Engine = useGpu ? "GPU" : "CPU";
@@ -1006,11 +1024,20 @@ internal sealed class TranscodeEngine
             s.PercentText = pct.ToString("F1", CultureInfo.InvariantCulture) + "%";
             s.EtaText = Tooling.FormatTs(eta);
             s.Details = $"time={timeStr} speed={speedStr}";
+
             if (File.Exists(item.OutputPath))
                 s.OutputSizeText = Tooling.FormatBytes(new FileInfo(item.OutputPath).Length);
+
+            var now = DateTime.UtcNow;
+            if ((now - s.LastProgressUiUpdateUtc).TotalMilliseconds >= 1000)
+            {
+                s.LastProgressUiUpdateUtc = now;
+                shouldPush = true;
+            }
         });
 
-        PushUi();
+        if (shouldPush)
+            PushUi();
     }
 
     private void UpdateFileUi(string key, Action<FileUiState> update)
@@ -1034,7 +1061,7 @@ internal sealed class TranscodeEngine
             if (!force && !final)
             {
                 var now = DateTime.UtcNow;
-                if ((now - lastUiPush).TotalMilliseconds < 250)
+                if ((now - lastUiPush).TotalMilliseconds < 500)
                     return;
 
                 lastUiPush = now;
@@ -1408,6 +1435,7 @@ internal sealed class FileUiState
     public string InputSizeText { get; set; } = "";
     public string OutputSizeText { get; set; } = "";
     public string Details { get; set; } = "";
+    public DateTime LastProgressUiUpdateUtc { get; set; }
 
     public FileUiState Clone() => (FileUiState)MemberwiseClone();
 }
