@@ -13,6 +13,11 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
+/*
+* Script pour l'encodage de fichier vidéos en format h264 + AAC
+@ToDo 
+*/
+
 internal static class Program
 {
     private static readonly string CrashLogPath = Path.Combine(AppContext.BaseDirectory, "crash.log");
@@ -72,7 +77,8 @@ internal static class Program
 }
 
 internal sealed class MainForm : Form
-{
+ {
+    //IHM
     private readonly TextBox txtSource = new() { Width = 560 };
     private readonly TextBox txtOutput = new() { Width = 560 };
     private readonly TextBox txtFfmpeg = new() { Width = 560, Text = Path.Combine(AppContext.BaseDirectory, "ffmpeg.exe") };
@@ -80,7 +86,7 @@ internal sealed class MainForm : Form
 
     private readonly ComboBox cmbMode = new() { DropDownStyle = ComboBoxStyle.DropDownList, Width = 120 };
     private readonly NumericUpDown nudCpuWorkers = new() { Minimum = 1, Maximum = 8, Value = 2, Width = 80 };
-    private readonly NumericUpDown nudGpuWorkers = new() { Minimum = 0, Maximum = 2, Value = 1, Width = 80 };
+    private readonly NumericUpDown nudGpuWorkers = new() { Minimum = 0, Maximum = 2, Value = 2, Width = 80 };
     private readonly NumericUpDown nudMinOutputMb = new() { Minimum = 1, Maximum = 10240, Value = 1, Width = 100 };
 
     private readonly CheckBox chkDeleteSource = new() { Text = "Supprimer la source si sortie validée" };
@@ -122,7 +128,7 @@ internal sealed class MainForm : Form
 
     public MainForm()
     {
-        Text = "Mini HandBrake maison";
+        Text = "Convertisseur h264/AAC";
         Width = 1200;
         Height = 860;
         StartPosition = FormStartPosition.CenterScreen;
@@ -1384,7 +1390,7 @@ internal sealed class AppOptions
     public string FfprobePath { get; set; } = "";
     public string Mode { get; set; } = "auto";
     public int CpuWorkers { get; set; } = 2;
-    public int GpuWorkers { get; set; } = 1;
+    public int GpuWorkers { get; set; } = 2;  // 2 Workflow par Défault 
     public bool DeleteSourceAfterSuccess { get; set; }
     public bool SkipCompatible { get; set; } = true;
     public bool MirrorTree { get; set; } = true;
